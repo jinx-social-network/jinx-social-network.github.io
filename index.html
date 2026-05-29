@@ -17,10 +17,11 @@ let globalScanRadius=6, globalIsolationPower=0.5;
 let globalFriction=0.85;
 let frameCounter=0;
 const GLOBAL_ADAPT_INTERVAL=20;
+let cameraX=0,cameraY=0,cameraZoom=1,targetCameraX=0,targetCameraY=0,targetZoom=1;
 function defaultGenome(type){switch(type){case TYPES.PREDATOR:return 0.8;case TYPES.SUPER_PREDATOR:return 1.0;case TYPES.PARASITE:return 0.35;default:return 0;}}
 function mutateGene(gene,type){let n=gene+(Math.random()*2-1)*0.15;switch(type){case TYPES.PREDATOR:n=Math.min(1,Math.max(0.1,n));break;case TYPES.SUPER_PREDATOR:n=Math.min(1,Math.max(0.5,n));break;case TYPES.PARASITE:n=Math.min(0.9,Math.max(0.05,n));break;}return n;}
-function saveState(){try{const s={cols,rows,grid:grid,timers:{mutation:timers.mutation,superPredator:timers.superPredator,parasite:timers.parasite,infected:timers.infected,guardian:timers.guardian}};localStorage.setItem(STORAGE_KEY,JSON.stringify(s));}catch(e){}}
-function loadState(){try{const s=localStorage.getItem(STORAGE_KEY);if(!s)return false;const st=JSON.parse(s);if(st.cols===cols&&st.rows===rows&&st.grid&&st.grid.length===cols&&st.grid[0].length===rows){grid=st.grid;timers=st.timers;if(!timers.guardian)timers.guardian=Array.from({length:cols},()=>new Array(rows).fill(0));genomeGrid=Array.from({length:cols},()=>new Float32Array(rows));memoryGrid=Array.from({length:cols},()=>new Float32Array(rows));impulseX=Array.from({length:cols},()=>new Float32Array(rows));impulseY=Array.from({length:cols},()=>new Float32Array(rows));learnX=Array.from({length:cols},()=>new Float32Array(rows));learnY=Array.from({length:cols},()=>new Float32Array(rows));nextGrid=Array.from({length:cols},()=>new Array(rows).fill(0));nextGenomeGrid=Array.from({length:cols},()=>new Float32Array(rows));nextMemoryGrid=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseX=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseY=Array.from({length:cols},()=>new Float32Array(rows));nextLearnX=Array.from({length:cols},()=>new Float32Array(rows));nextLearnY=Array.from({length:cols},()=>new Float32Array(rows));return true;}}catch(e){}return false;}
+function saveState(){try{const s={cols,rows,grid:grid,timers:{mutation:timers.mutation,superPredator:timers.superPredator,parasite:timers.parasite,infected:timers.infected,guardian:timers.guardian},camera:{cameraX,cameraY,cameraZoom,targetCameraX,targetCameraY,targetZoom}};localStorage.setItem(STORAGE_KEY,JSON.stringify(s));}catch(e){}}
+function loadState(){try{const s=localStorage.getItem(STORAGE_KEY);if(!s)return false;const st=JSON.parse(s);if(st.cols===cols&&st.rows===rows&&st.grid&&st.grid.length===cols&&st.grid[0].length===rows){grid=st.grid;timers=st.timers;if(!timers.guardian)timers.guardian=Array.from({length:cols},()=>new Array(rows).fill(0));genomeGrid=Array.from({length:cols},()=>new Float32Array(rows));memoryGrid=Array.from({length:cols},()=>new Float32Array(rows));impulseX=Array.from({length:cols},()=>new Float32Array(rows));impulseY=Array.from({length:cols},()=>new Float32Array(rows));learnX=Array.from({length:cols},()=>new Float32Array(rows));learnY=Array.from({length:cols},()=>new Float32Array(rows));nextGrid=Array.from({length:cols},()=>new Array(rows).fill(0));nextGenomeGrid=Array.from({length:cols},()=>new Float32Array(rows));nextMemoryGrid=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseX=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseY=Array.from({length:cols},()=>new Float32Array(rows));nextLearnX=Array.from({length:cols},()=>new Float32Array(rows));nextLearnY=Array.from({length:cols},()=>new Float32Array(rows));if(st.camera){cameraX=st.camera.cameraX||width/2;cameraY=st.camera.cameraY||height/2;cameraZoom=st.camera.cameraZoom||1;targetCameraX=st.camera.targetCameraX||cameraX;targetCameraY=st.camera.targetCameraY||cameraY;targetZoom=st.camera.targetZoom||cameraZoom;}else{const centerX=width/2,centerY=height/2;cameraX=targetCameraX=centerX;cameraY=targetCameraY=centerY;cameraZoom=targetZoom=1;}return true;}}catch(e){}return false;}
 function resize(){width=window.innerWidth;height=window.innerHeight;canvas.width=width;canvas.height=height;cols=Math.floor(width/cellSize);rows=Math.floor(height/cellSize);if(!loadState())initGrid();}
 function initGrid(){
 grid=Array.from({length:cols},()=>new Array(rows).fill(0));
@@ -40,6 +41,7 @@ nextLearnY=Array.from({length:cols},()=>new Float32Array(rows));
 for(const k of Object.keys(timers)){timers[k]=Array.from({length:cols},()=>new Array(rows).fill(0));}
 const {cx1,cx2,cy1,cy2}=getCenterBounds();
 for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(!(i>=cx1&&i<=cx2&&j>=cy1&&j<=cy2)&&Math.random()<0.06)grid[i][j]=TYPES.LIFE;}}
+cameraX=width/2;cameraY=height/2;cameraZoom=1;targetCameraX=width/2;targetCameraY=height/2;targetZoom=1;
 }
 function getCenterBounds(){const cx1=Math.floor(cols*0.3),cx2=Math.floor(cols*0.7);const cy1=Math.floor(rows*0.3),cy2=Math.floor(rows*0.7);return{cx1,cx2,cy1,cy2};}
 function isCenter(i,j){const {cx1,cx2,cy1,cy2}=getCenterBounds();return i>=cx1&&i<=cx2&&j>=cy1&&j<=cy2;}
@@ -88,7 +90,10 @@ const lifeAround=countLife(i,j);
 if(lifeAround<2) isolatedCount++;
 }
 }}
-if(totalLife===0) return;
+if(totalLife===0){
+targetCameraX=width/2; targetCameraY=height/2; targetZoom=1;
+return;
+}
 const meanX=sumX/totalLife, meanY=sumY/totalLife;
 let varianceSum=0;
 for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
@@ -113,6 +118,10 @@ globalFriction = Math.min(0.99, Math.max(0.5, fr + gradFR));
 if(isolationRatio > 0.5) globalScanRadius = Math.min(10, 6 + Math.floor(isolationRatio*5));
 else globalScanRadius = Math.max(4, 6 - Math.floor((0.5-isolationRatio)*4));
 globalIsolationPower = isolationRatio;
+targetCameraX = meanX * cellSize;
+targetCameraY = meanY * cellSize;
+const desiredZoom = 1 + 2 / (1 + avgDist / 5) * (1 - isolationRatio * 0.5);
+targetZoom = Math.min(3.0, Math.max(0.3, desiredZoom));
 }
 function update(){
 targetDriftX=Math.sin(Date.now()*0.0013)*0.4+Math.cos(Date.now()*0.0017)*0.3;
@@ -126,6 +135,9 @@ shiftCounter=0;
 }
 frameCounter++;
 if(frameCounter%GLOBAL_ADAPT_INTERVAL===0) globalAdapt();
+cameraX += (targetCameraX - cameraX) * 0.05;
+cameraY += (targetCameraY - cameraY) * 0.05;
+cameraZoom += (targetZoom - cameraZoom) * 0.05;
 for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
 if(grid[i][j]!==TYPES.EMPTY){const input=countLife(i,j)/8;nextMemoryGrid[i][j]=0.95*memoryGrid[i][j]+0.05*input;}
 else nextMemoryGrid[i][j]=0;
@@ -253,6 +265,16 @@ for(let i=0;i<cols;i++)nextGrid[i].fill(0);
 }
 function draw(){
 ctx.clearRect(0,0,width,height);
+const W=cols*cellSize, H=rows*cellSize;
+const left=cameraX-width/(2*cameraZoom), right=cameraX+width/(2*cameraZoom);
+const top=cameraY-height/(2*cameraZoom), bottom=cameraY+height/(2*cameraZoom);
+const i_min=Math.floor(left/W), i_max=Math.floor(right/W);
+const j_min=Math.floor(top/H), j_max=Math.floor(bottom/H);
+for(let ti=i_min;ti<=i_max;ti++){for(let tj=j_min;tj<=j_max;tj++){
+ctx.save();
+ctx.translate(width/2,height/2);
+ctx.scale(cameraZoom,cameraZoom);
+ctx.translate(-cameraX+ti*W,-cameraY+tj*H);
 ctx.strokeStyle='rgba(255,0,255,0.2)';ctx.lineWidth=1;
 for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
 const cell=grid[i][j];
@@ -275,8 +297,10 @@ case TYPES.PREDATOR:s='rgba(0,255,255,0.5)';sh='#00ffff';b=8;break;
 case TYPES.SUPER_PREDATOR:{const int=0.6+Math.sin(Date.now()*0.03+i+j)*0.2;s='rgba(255,20,150,'+int+')';sh='#ff1496';b=12;break;}
 case TYPES.PARASITE:s='rgba(255,20,150,0.6)';sh='#ff1496';b=10;break;
 case TYPES.INFECTED:{const int=0.25+Math.sin(Date.now()*0.025+i+j)*0.1;s='rgba(255,80,180,'+int+')';sh='#ff50b4';b=7;break;}
-case TYPES.GUARDIAN:s='rgba(0,0,0,1)';sh='transparent';b=0;break;
+case TYPES.GUARDIAN:s='rgba(0,0,0,0)';sh='transparent';b=0;break;
 }ctx.fillStyle=s;ctx.shadowColor=sh;ctx.shadowBlur=b;ctx.fillRect(x,y,cellSize-1,cellSize-1);}}ctx.shadowBlur=0;ctx.shadowColor='transparent';
+ctx.restore();
+}}
 }
 function loop(){update();draw();requestAnimationFrame(loop);}
 window.addEventListener('resize',resize);resize();
