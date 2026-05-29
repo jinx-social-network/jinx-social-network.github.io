@@ -8,23 +8,147 @@ const cellSize=isMobile?4:5;
 const TYPES={EMPTY:0,LIFE:1,MUTANT:2,PREDATOR:3,SUPER_PREDATOR:4,PARASITE:5,INFECTED:6,GUARDIAN:7};
 const DURATIONS={MUTATION:15,SUPER_PREDATOR:10,PARASITE:20,INFECTED:12,GUARDIAN:8};
 let grid,nextGrid,genomeGrid,nextGenomeGrid,memoryGrid,nextMemoryGrid,impulseX,impulseY,nextImpulseX,nextImpulseY;
+let learnX,learnY,nextLearnX,nextLearnY;
 let timers={mutation:[],superPredator:[],parasite:[],infected:[],guardian:[]};
 let driftX=0,driftY=0,targetDriftX=0,targetDriftY=0,shiftCounter=0;
 const SHIFT_INTERVAL=5,STORAGE_KEY='jinx_life_state';
+let globalLearningRate=0.5, globalImpulseWeight=0.8;
+let globalScanRadius=6, globalIsolationPower=0.5;
+let globalFriction=0.85;
+let frameCounter=0;
+const GLOBAL_ADAPT_INTERVAL=20;
 function defaultGenome(type){switch(type){case TYPES.PREDATOR:return 0.8;case TYPES.SUPER_PREDATOR:return 1.0;case TYPES.PARASITE:return 0.35;default:return 0;}}
 function mutateGene(gene,type){let n=gene+(Math.random()*2-1)*0.15;switch(type){case TYPES.PREDATOR:n=Math.min(1,Math.max(0.1,n));break;case TYPES.SUPER_PREDATOR:n=Math.min(1,Math.max(0.5,n));break;case TYPES.PARASITE:n=Math.min(0.9,Math.max(0.05,n));break;}return n;}
 function saveState(){try{const s={cols,rows,grid:grid,timers:{mutation:timers.mutation,superPredator:timers.superPredator,parasite:timers.parasite,infected:timers.infected,guardian:timers.guardian}};localStorage.setItem(STORAGE_KEY,JSON.stringify(s));}catch(e){}}
-function loadState(){try{const s=localStorage.getItem(STORAGE_KEY);if(!s)return false;const st=JSON.parse(s);if(st.cols===cols&&st.rows===rows&&st.grid&&st.grid.length===cols&&st.grid[0].length===rows){grid=st.grid;timers=st.timers;if(!timers.guardian)timers.guardian=Array.from({length:cols},()=>new Array(rows).fill(0));genomeGrid=Array.from({length:cols},()=>new Float32Array(rows));memoryGrid=Array.from({length:cols},()=>new Float32Array(rows));impulseX=Array.from({length:cols},()=>new Float32Array(rows));impulseY=Array.from({length:cols},()=>new Float32Array(rows));nextGrid=Array.from({length:cols},()=>new Array(rows).fill(0));nextGenomeGrid=Array.from({length:cols},()=>new Float32Array(rows));nextMemoryGrid=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseX=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseY=Array.from({length:cols},()=>new Float32Array(rows));return true;}}catch(e){}return false;}
+function loadState(){try{const s=localStorage.getItem(STORAGE_KEY);if(!s)return false;const st=JSON.parse(s);if(st.cols===cols&&st.rows===rows&&st.grid&&st.grid.length===cols&&st.grid[0].length===rows){grid=st.grid;timers=st.timers;if(!timers.guardian)timers.guardian=Array.from({length:cols},()=>new Array(rows).fill(0));genomeGrid=Array.from({length:cols},()=>new Float32Array(rows));memoryGrid=Array.from({length:cols},()=>new Float32Array(rows));impulseX=Array.from({length:cols},()=>new Float32Array(rows));impulseY=Array.from({length:cols},()=>new Float32Array(rows));learnX=Array.from({length:cols},()=>new Float32Array(rows));learnY=Array.from({length:cols},()=>new Float32Array(rows));nextGrid=Array.from({length:cols},()=>new Array(rows).fill(0));nextGenomeGrid=Array.from({length:cols},()=>new Float32Array(rows));nextMemoryGrid=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseX=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseY=Array.from({length:cols},()=>new Float32Array(rows));nextLearnX=Array.from({length:cols},()=>new Float32Array(rows));nextLearnY=Array.from({length:cols},()=>new Float32Array(rows));return true;}}catch(e){}return false;}
 function resize(){width=window.innerWidth;height=window.innerHeight;canvas.width=width;canvas.height=height;cols=Math.floor(width/cellSize);rows=Math.floor(height/cellSize);if(!loadState())initGrid();}
-function initGrid(){grid=Array.from({length:cols},()=>new Array(rows).fill(0));nextGrid=Array.from({length:cols},()=>new Array(rows).fill(0));genomeGrid=Array.from({length:cols},()=>new Float32Array(rows));nextGenomeGrid=Array.from({length:cols},()=>new Float32Array(rows));memoryGrid=Array.from({length:cols},()=>new Float32Array(rows));nextMemoryGrid=Array.from({length:cols},()=>new Float32Array(rows));impulseX=Array.from({length:cols},()=>new Float32Array(rows));impulseY=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseX=Array.from({length:cols},()=>new Float32Array(rows));nextImpulseY=Array.from({length:cols},()=>new Float32Array(rows));for(const k of Object.keys(timers)){timers[k]=Array.from({length:cols},()=>new Array(rows).fill(0));}const {cx1,cx2,cy1,cy2}=getCenterBounds();for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(!(i>=cx1&&i<=cx2&&j>=cy1&&j<=cy2)&&Math.random()<0.06)grid[i][j]=TYPES.LIFE;}}}
+function initGrid(){
+grid=Array.from({length:cols},()=>new Array(rows).fill(0));
+nextGrid=Array.from({length:cols},()=>new Array(rows).fill(0));
+genomeGrid=Array.from({length:cols},()=>new Float32Array(rows));
+nextGenomeGrid=Array.from({length:cols},()=>new Float32Array(rows));
+memoryGrid=Array.from({length:cols},()=>new Float32Array(rows));
+nextMemoryGrid=Array.from({length:cols},()=>new Float32Array(rows));
+impulseX=Array.from({length:cols},()=>new Float32Array(rows));
+impulseY=Array.from({length:cols},()=>new Float32Array(rows));
+nextImpulseX=Array.from({length:cols},()=>new Float32Array(rows));
+nextImpulseY=Array.from({length:cols},()=>new Float32Array(rows));
+learnX=Array.from({length:cols},()=>new Float32Array(rows));
+learnY=Array.from({length:cols},()=>new Float32Array(rows));
+nextLearnX=Array.from({length:cols},()=>new Float32Array(rows));
+nextLearnY=Array.from({length:cols},()=>new Float32Array(rows));
+for(const k of Object.keys(timers)){timers[k]=Array.from({length:cols},()=>new Array(rows).fill(0));}
+const {cx1,cx2,cy1,cy2}=getCenterBounds();
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(!(i>=cx1&&i<=cx2&&j>=cy1&&j<=cy2)&&Math.random()<0.06)grid[i][j]=TYPES.LIFE;}}
+}
 function getCenterBounds(){const cx1=Math.floor(cols*0.3),cx2=Math.floor(cols*0.7);const cy1=Math.floor(rows*0.3),cy2=Math.floor(rows*0.7);return{cx1,cx2,cy1,cy2};}
 function isCenter(i,j){const {cx1,cx2,cy1,cy2}=getCenterBounds();return i>=cx1&&i<=cx2&&j>=cy1&&j<=cy2;}
 function countNeighbors(x,y,type){let c=0;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){if(dx===0&&dy===0)continue;if(grid[(x+dx+cols)%cols][(y+dy+rows)%rows]===type)c++;}return c;}
 function countLife(x,y){return countNeighbors(x,y,TYPES.LIFE)+countNeighbors(x,y,TYPES.MUTANT)+countNeighbors(x,y,TYPES.INFECTED);}
-function shiftGridOnce(dx,dy){const ng=Array.from({length:cols},()=>new Array(rows).fill(0));const ng2=Array.from({length:cols},()=>new Float32Array(rows));const nm=Array.from({length:cols},()=>new Float32Array(rows));const nix=Array.from({length:cols},()=>new Float32Array(rows));const niy=Array.from({length:cols},()=>new Float32Array(rows));const nt={};for(const k of Object.keys(timers)){nt[k]=Array.from({length:cols},()=>new Array(rows).fill(0));}for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){const ni=(i+dx+cols)%cols,nj=(j+dy+rows)%rows;if(grid[i][j]!==TYPES.EMPTY){ng[ni][nj]=grid[i][j];ng2[ni][nj]=genomeGrid[i][j];nm[ni][nj]=memoryGrid[i][j];nix[ni][nj]=impulseX[i][j];niy[ni][nj]=impulseY[i][j];for(const k of Object.keys(timers)){nt[k][ni][nj]=timers[k][i][j];}}}}for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(ng[i][j]===TYPES.EMPTY&&!isCenter(i,j)){const oi=(i-dx+cols)%cols,oj=(j-dy+rows)%rows;if(grid[oi][oj]===TYPES.EMPTY){if(Math.random()<0.04)ng[i][j]=TYPES.LIFE;}else{if(Math.random()<0.02)ng[i][j]=TYPES.LIFE;}}}}grid=ng;genomeGrid=ng2;memoryGrid=nm;impulseX=nix;impulseY=niy;for(const k of Object.keys(timers))timers[k]=nt[k];}
-function update(){targetDriftX=Math.sin(Date.now()*0.0013)*0.4+Math.cos(Date.now()*0.0017)*0.3;targetDriftY=Math.cos(Date.now()*0.0011)*0.4+Math.sin(Date.now()*0.0015)*0.3;driftX+=(targetDriftX-driftX)*0.04;driftY+=(targetDriftY-driftY)*0.04;shiftCounter++;if(shiftCounter>=SHIFT_INTERVAL){const dx=Math.round(driftX*1.5),dy=Math.round(driftY*1.5);if(dx!==0||dy!==0)shiftGridOnce(dx,dy);shiftCounter=0;}
-for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(grid[i][j]!==TYPES.EMPTY){const input=countLife(i,j)/8;nextMemoryGrid[i][j]=0.95*memoryGrid[i][j]+0.05*input;}else nextMemoryGrid[i][j]=0;}}
-for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){const cell=grid[i][j];nextGenomeGrid[i][j]=0;if(cell===TYPES.EMPTY){const life=countLife(i,j);if(!isCenter(i,j)&&life>=4&&Math.random()<0.07){nextGrid[i][j]=TYPES.PREDATOR;let inh=null;for(let dx=-1;dx<=1&&inh===null;dx++){for(let dy=-1;dy<=1;dy++){const ni=(i+dx+cols)%cols,nj=(j+dy+rows)%rows;if(grid[ni][nj]===TYPES.PREDATOR){inh=genomeGrid[ni][nj];break;}}}nextGenomeGrid[i][j]=inh!==null?mutateGene(inh,TYPES.PREDATOR):defaultGenome(TYPES.PREDATOR);}else if(life===3){nextGrid[i][j]=TYPES.LIFE;}else if(!isCenter(i,j)&&countNeighbors(i,j,TYPES.MUTANT)>=2&&Math.random()<0.3){nextGrid[i][j]=TYPES.MUTANT;timers.mutation[i][j]=DURATIONS.MUTATION;}else if(!isCenter(i,j)&&countNeighbors(i,j,TYPES.PARASITE)>=2&&Math.random()<0.2){nextGrid[i][j]=TYPES.PARASITE;timers.parasite[i][j]=DURATIONS.PARASITE;let inh=null;for(let dx=-1;dx<=1&&inh===null;dx++){for(let dy=-1;dy<=1;dy++){const ni=(i+dx+cols)%cols,nj=(j+dy+rows)%rows;if(grid[ni][nj]===TYPES.PARASITE){inh=genomeGrid[ni][nj];break;}}}nextGenomeGrid[i][j]=inh!==null?mutateGene(inh,TYPES.PARASITE):defaultGenome(TYPES.PARASITE);}else{nextGrid[i][j]=TYPES.EMPTY;}continue;}
+function shiftGridOnce(dx,dy){
+const ng=Array.from({length:cols},()=>new Array(rows).fill(0));
+const ng2=Array.from({length:cols},()=>new Float32Array(rows));
+const nm=Array.from({length:cols},()=>new Float32Array(rows));
+const nix=Array.from({length:cols},()=>new Float32Array(rows));
+const niy=Array.from({length:cols},()=>new Float32Array(rows));
+const nlx=Array.from({length:cols},()=>new Float32Array(rows));
+const nly=Array.from({length:cols},()=>new Float32Array(rows));
+const nt={};
+for(const k of Object.keys(timers)){nt[k]=Array.from({length:cols},()=>new Array(rows).fill(0));}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+const ni=(i+dx+cols)%cols,nj=(j+dy+rows)%rows;
+if(grid[i][j]!==TYPES.EMPTY){
+ng[ni][nj]=grid[i][j];ng2[ni][nj]=genomeGrid[i][j];nm[ni][nj]=memoryGrid[i][j];
+nix[ni][nj]=impulseX[i][j];niy[ni][nj]=impulseY[i][j];
+nlx[ni][nj]=learnX[i][j];nly[ni][nj]=learnY[i][j];
+for(const k of Object.keys(timers)){nt[k][ni][nj]=timers[k][i][j];}
+}
+}}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+if(ng[i][j]===TYPES.EMPTY&&!isCenter(i,j)){
+const oi=(i-dx+cols)%cols,oj=(j-dy+rows)%rows;
+if(grid[oi][oj]===TYPES.EMPTY){if(Math.random()<0.04)ng[i][j]=TYPES.LIFE;}
+else{if(Math.random()<0.02)ng[i][j]=TYPES.LIFE;}
+}
+}}
+grid=ng;genomeGrid=ng2;memoryGrid=nm;
+impulseX=nix;impulseY=niy;
+learnX=nlx;learnY=nly;
+for(const k of Object.keys(timers))timers[k]=nt[k];
+}
+function globalAdapt(){
+let totalLife=0, sumX=0, sumY=0;
+let isolatedCount=0;
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+const c=grid[i][j];
+if(c===TYPES.LIFE||c===TYPES.MUTANT||c===TYPES.INFECTED){
+totalLife++;
+sumX+=i; sumY+=j;
+const lifeAround=countLife(i,j);
+if(lifeAround<2) isolatedCount++;
+}
+}}
+if(totalLife===0) return;
+const meanX=sumX/totalLife, meanY=sumY/totalLife;
+let varianceSum=0;
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+const c=grid[i][j];
+if(c===TYPES.LIFE||c===TYPES.MUTANT||c===TYPES.INFECTED){
+const dx=i-meanX, dy=j-meanY;
+varianceSum+=dx*dx+dy*dy;
+}
+}}
+const avgDist=Math.sqrt(varianceSum/totalLife);
+const isolationRatio=isolatedCount/totalLife;
+const loss = isolationRatio*0.7 + (avgDist/Math.max(cols,rows))*0.3;
+const lr = globalLearningRate;
+const iw = globalImpulseWeight;
+const fr = globalFriction;
+const gradLR = (loss - 0.2) * 0.01;
+const gradIW = (loss - 0.2) * 0.005;
+const gradFR = (loss - 0.2) * 0.01;
+globalLearningRate = Math.min(1.0, Math.max(0.01, lr - gradLR));
+globalImpulseWeight = Math.min(1.0, Math.max(0.01, iw - gradIW));
+globalFriction = Math.min(0.99, Math.max(0.5, fr + gradFR));
+if(isolationRatio > 0.5) globalScanRadius = Math.min(10, 6 + Math.floor(isolationRatio*5));
+else globalScanRadius = Math.max(4, 6 - Math.floor((0.5-isolationRatio)*4));
+globalIsolationPower = isolationRatio;
+}
+function update(){
+targetDriftX=Math.sin(Date.now()*0.0013)*0.4+Math.cos(Date.now()*0.0017)*0.3;
+targetDriftY=Math.cos(Date.now()*0.0011)*0.4+Math.sin(Date.now()*0.0015)*0.3;
+driftX+=(targetDriftX-driftX)*0.04;driftY+=(targetDriftY-driftY)*0.04;
+shiftCounter++;
+if(shiftCounter>=SHIFT_INTERVAL){
+const dx=Math.round(driftX*1.5),dy=Math.round(driftY*1.5);
+if(dx!==0||dy!==0)shiftGridOnce(dx,dy);
+shiftCounter=0;
+}
+frameCounter++;
+if(frameCounter%GLOBAL_ADAPT_INTERVAL===0) globalAdapt();
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+if(grid[i][j]!==TYPES.EMPTY){const input=countLife(i,j)/8;nextMemoryGrid[i][j]=0.95*memoryGrid[i][j]+0.05*input;}
+else nextMemoryGrid[i][j]=0;
+}}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+const cell=grid[i][j];nextGenomeGrid[i][j]=0;
+if(cell===TYPES.EMPTY){
+const life=countLife(i,j);
+if(!isCenter(i,j)&&life>=4&&Math.random()<0.07){
+nextGrid[i][j]=TYPES.PREDATOR;
+let inh=null;
+for(let dx=-1;dx<=1&&inh===null;dx++){for(let dy=-1;dy<=1;dy++){const ni=(i+dx+cols)%cols,nj=(j+dy+rows)%rows;if(grid[ni][nj]===TYPES.PREDATOR){inh=genomeGrid[ni][nj];break;}}}
+nextGenomeGrid[i][j]=inh!==null?mutateGene(inh,TYPES.PREDATOR):defaultGenome(TYPES.PREDATOR);
+}else if(life===3){nextGrid[i][j]=TYPES.LIFE;}
+else if(!isCenter(i,j)&&countNeighbors(i,j,TYPES.MUTANT)>=2&&Math.random()<0.3){nextGrid[i][j]=TYPES.MUTANT;timers.mutation[i][j]=DURATIONS.MUTATION;}
+else if(!isCenter(i,j)&&countNeighbors(i,j,TYPES.PARASITE)>=2&&Math.random()<0.2){
+nextGrid[i][j]=TYPES.PARASITE;timers.parasite[i][j]=DURATIONS.PARASITE;
+let inh=null;
+for(let dx=-1;dx<=1&&inh===null;dx++){for(let dy=-1;dy<=1;dy++){const ni=(i+dx+cols)%cols,nj=(j+dy+rows)%rows;if(grid[ni][nj]===TYPES.PARASITE){inh=genomeGrid[ni][nj];break;}}}
+nextGenomeGrid[i][j]=inh!==null?mutateGene(inh,TYPES.PARASITE):defaultGenome(TYPES.PARASITE);
+}else{nextGrid[i][j]=TYPES.EMPTY;}
+continue;
+}
 if(cell===TYPES.MUTANT){if(timers.mutation[i][j]>0){timers.mutation[i][j]--;nextGrid[i][j]=TYPES.MUTANT;}else nextGrid[i][j]=TYPES.LIFE;continue;}
 if(cell===TYPES.SUPER_PREDATOR){if(timers.superPredator[i][j]>0){timers.superPredator[i][j]--;nextGrid[i][j]=TYPES.SUPER_PREDATOR;nextGenomeGrid[i][j]=genomeGrid[i][j];}else nextGrid[i][j]=TYPES.EMPTY;continue;}
 if(cell===TYPES.PARASITE){if(timers.parasite[i][j]>0){timers.parasite[i][j]--;nextGrid[i][j]=TYPES.PARASITE;nextGenomeGrid[i][j]=genomeGrid[i][j];}else nextGrid[i][j]=TYPES.EMPTY;continue;}
@@ -32,17 +156,128 @@ if(cell===TYPES.INFECTED){if(timers.infected[i][j]>0){timers.infected[i][j]--;ne
 if(cell===TYPES.GUARDIAN){if(timers.guardian[i][j]>0){timers.guardian[i][j]--;nextGrid[i][j]=TYPES.GUARDIAN;const mem=memoryGrid[i][j]||0;for(let dx=-2;dx<=2;dx++){for(let dy=-2;dy<=2;dy++){if(dx===0&&dy===0)continue;const ci=(i+dx+cols)%cols,cj=(j+dy+rows)%rows;if(nextGrid[ci][cj]!==TYPES.EMPTY&&nextGrid[ci][cj]!==TYPES.GUARDIAN){if(Math.random()<Math.min(1,0.85+0.15*mem)){nextGrid[ci][cj]=TYPES.EMPTY;nextGenomeGrid[ci][cj]=0;nextMemoryGrid[ci][cj]=0;}}}}}else nextGrid[i][j]=TYPES.EMPTY;continue;}
 if(cell===TYPES.PREDATOR){nextGrid[i][j]=TYPES.EMPTY;continue;}
 const life=countLife(i,j);const predators=countNeighbors(i,j,TYPES.PREDATOR);const superPreds=countNeighbors(i,j,TYPES.SUPER_PREDATOR);const parasites=countNeighbors(i,j,TYPES.PARASITE);
-if(life>=7||predators>0||superPreds>0||parasites>0){nextGrid[i][j]=TYPES.EMPTY;if(parasites>0&&Math.random()<0.35*(1+0.5*memoryGrid[i][j])){nextGrid[i][j]=TYPES.INFECTED;timers.infected[i][j]=DURATIONS.INFECTED;}}else if(life>=2&&life<=3){if(Math.random()<0.012*(1+memoryGrid[i][j])){nextGrid[i][j]=TYPES.MUTANT;timers.mutation[i][j]=DURATIONS.MUTATION;}else if(parasites>0&&Math.random()<0.18*(1+0.5*memoryGrid[i][j])){nextGrid[i][j]=TYPES.INFECTED;timers.infected[i][j]=DURATIONS.INFECTED;}else nextGrid[i][j]=TYPES.LIFE;}else nextGrid[i][j]=TYPES.EMPTY;}}
-for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(grid[i][j]===TYPES.PREDATOR){const kc=genomeGrid[i][j]||defaultGenome(TYPES.PREDATOR);const mem=memoryGrid[i][j]||0;for(let dx=-1;dx<=1;dx++){for(let dy=-1;dy<=1;dy++){if(dx===0&&dy===0)continue;const ci=(i+dx+cols)%cols,cj=(j+dy+rows)%rows;if([TYPES.LIFE,TYPES.MUTANT,TYPES.INFECTED].includes(nextGrid[ci][cj])){if(Math.random()<Math.min(1,kc*(0.9+0.2*mem))){nextGrid[ci][cj]=TYPES.EMPTY;if(!isCenter(ci,cj)&&Math.random()<0.25){nextGrid[ci][cj]=TYPES.SUPER_PREDATOR;timers.superPredator[ci][cj]=DURATIONS.SUPER_PREDATOR;nextGenomeGrid[ci][cj]=mutateGene(kc,TYPES.SUPER_PREDATOR);}}}else if(nextGrid[ci][cj]===TYPES.PARASITE){nextGrid[ci][cj]=TYPES.EMPTY;}}}}
+if(life>=7||predators>0||superPreds>0||parasites>0){nextGrid[i][j]=TYPES.EMPTY;if(parasites>0&&Math.random()<0.35*(1+0.5*memoryGrid[i][j])){nextGrid[i][j]=TYPES.INFECTED;timers.infected[i][j]=DURATIONS.INFECTED;}}else if(life>=2&&life<=3){if(Math.random()<0.012*(1+memoryGrid[i][j])){nextGrid[i][j]=TYPES.MUTANT;timers.mutation[i][j]=DURATIONS.MUTATION;}else if(parasites>0&&Math.random()<0.18*(1+0.5*memoryGrid[i][j])){nextGrid[i][j]=TYPES.INFECTED;timers.infected[i][j]=DURATIONS.INFECTED;}else nextGrid[i][j]=TYPES.LIFE;}else nextGrid[i][j]=TYPES.EMPTY;
+}}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+if(grid[i][j]===TYPES.PREDATOR){const kc=genomeGrid[i][j]||defaultGenome(TYPES.PREDATOR);const mem=memoryGrid[i][j]||0;for(let dx=-1;dx<=1;dx++){for(let dy=-1;dy<=1;dy++){if(dx===0&&dy===0)continue;const ci=(i+dx+cols)%cols,cj=(j+dy+rows)%rows;if([TYPES.LIFE,TYPES.MUTANT,TYPES.INFECTED].includes(nextGrid[ci][cj])){if(Math.random()<Math.min(1,kc*(0.9+0.2*mem))){nextGrid[ci][cj]=TYPES.EMPTY;if(!isCenter(ci,cj)&&Math.random()<0.25){nextGrid[ci][cj]=TYPES.SUPER_PREDATOR;timers.superPredator[ci][cj]=DURATIONS.SUPER_PREDATOR;nextGenomeGrid[ci][cj]=mutateGene(kc,TYPES.SUPER_PREDATOR);}}}else if(nextGrid[ci][cj]===TYPES.PARASITE){nextGrid[ci][cj]=TYPES.EMPTY;}}}}
 if(grid[i][j]===TYPES.SUPER_PREDATOR){const kc=genomeGrid[i][j]||defaultGenome(TYPES.SUPER_PREDATOR);const mem=memoryGrid[i][j]||0;for(let dx=-1;dx<=1;dx++){for(let dy=-1;dy<=1;dy++){if(dx===0&&dy===0)continue;const ci=(i+dx+cols)%cols,cj=(j+dy+rows)%rows;if(nextGrid[ci][cj]!==TYPES.EMPTY&&nextGrid[ci][cj]!==TYPES.SUPER_PREDATOR){if(Math.random()<Math.min(1,kc*(0.9+0.2*mem)))nextGrid[ci][cj]=TYPES.EMPTY;}}}}
-if(grid[i][j]===TYPES.PARASITE){const ic=genomeGrid[i][j]||defaultGenome(TYPES.PARASITE);const mem=memoryGrid[i][j]||0;for(let dx=-1;dx<=1;dx++){for(let dy=-1;dy<=1;dy++){if(dx===0&&dy===0)continue;const ci=(i+dx+cols)%cols,cj=(j+dy+rows)%rows;if(nextGrid[ci][cj]===TYPES.LIFE&&Math.random()<Math.min(1,ic*(0.9+0.2*mem))){nextGrid[ci][cj]=TYPES.INFECTED;timers.infected[ci][cj]=DURATIONS.INFECTED;}}}}}}
+if(grid[i][j]===TYPES.PARASITE){const ic=genomeGrid[i][j]||defaultGenome(TYPES.PARASITE);const mem=memoryGrid[i][j]||0;for(let dx=-1;dx<=1;dx++){for(let dy=-1;dy<=1;dy++){if(dx===0&&dy===0)continue;const ci=(i+dx+cols)%cols,cj=(j+dy+rows)%rows;if(nextGrid[ci][cj]===TYPES.LIFE&&Math.random()<Math.min(1,ic*(0.9+0.2*mem))){nextGrid[ci][cj]=TYPES.INFECTED;timers.infected[ci][cj]=DURATIONS.INFECTED;}}}}
+}}
 const {cx1,cx2,cy1,cy2}=getCenterBounds();
-for(let i=cx1;i<=cx2;i++){for(let j=cy1;j<=cy2;j++){if(nextGrid[i][j]===TYPES.EMPTY&&Math.random()<0.1){nextGrid[i][j]=TYPES.GUARDIAN;timers.guardian[i][j]=DURATIONS.GUARDIAN;nextMemoryGrid[i][j]=0;}}}
-for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(grid[i][j]!==TYPES.EMPTY){let dx=0,dy=0;const type=grid[i][j];if(type===TYPES.LIFE||type===TYPES.MUTANT||type===TYPES.INFECTED){for(let nx=-1;nx<=1;nx++){for(let ny=-1;ny<=1;ny++){if(nx===0&&ny===0)continue;const ni=(i+nx+cols)%cols,nj=(j+ny+rows)%rows;if(grid[ni][nj]===TYPES.LIFE||grid[ni][nj]===TYPES.MUTANT||grid[ni][nj]===TYPES.INFECTED){dx+=nx*0.3;dy+=ny*0.3;}else if(grid[ni][nj]===TYPES.PREDATOR||grid[ni][nj]===TYPES.SUPER_PREDATOR){dx-=nx*0.5;dy-=ny*0.5;}}}}else if(type===TYPES.PREDATOR||type===TYPES.SUPER_PREDATOR){for(let nx=-2;nx<=2;nx++){for(let ny=-2;ny<=2;ny++){if(nx===0&&ny===0)continue;const ni=(i+nx+cols)%cols,nj=(j+ny+rows)%rows;if(grid[ni][nj]===TYPES.LIFE||grid[ni][nj]===TYPES.MUTANT||grid[ni][nj]===TYPES.INFECTED){dx+=nx*0.5;dy+=ny*0.5;}}}}else if(type===TYPES.PARASITE){for(let nx=-1;nx<=1;nx++){for(let ny=-1;ny<=1;ny++){if(nx===0&&ny===0)continue;const ni=(i+nx+cols)%cols,nj=(j+ny+rows)%rows;if(grid[ni][nj]===TYPES.LIFE){dx+=nx*0.2;dy+=ny*0.2;}}}}nextImpulseX[i][j]=0.85*impulseX[i][j]+0.15*dx;nextImpulseY[i][j]=0.85*impulseY[i][j]+0.15*dy;}else{nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;}}}
-for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(grid[i][j]===TYPES.EMPTY)continue;const ix=impulseX[i][j],iy=impulseY[i][j];if(Math.abs(ix)<0.3&&Math.abs(iy)<0.3)continue;const ni=(i+Math.round(ix)+cols)%cols,nj=(j+Math.round(iy)+rows)%rows;if(ni===i&&nj===j)continue;if(nextGrid[ni][nj]===TYPES.EMPTY){nextGrid[ni][nj]=grid[i][j];nextGenomeGrid[ni][nj]=genomeGrid[i][j];nextMemoryGrid[ni][nj]=memoryGrid[i][j];nextImpulseX[ni][nj]=impulseX[i][j];nextImpulseY[ni][nj]=impulseY[i][j];for(const k of Object.keys(timers)){timers[k][ni][nj]=timers[k][i][j];timers[k][i][j]=0;}nextGrid[i][j]=TYPES.EMPTY;nextGenomeGrid[i][j]=0;nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;}else if((grid[i][j]===TYPES.PREDATOR||grid[i][j]===TYPES.SUPER_PREDATOR)&&(nextGrid[ni][nj]===TYPES.LIFE||nextGrid[ni][nj]===TYPES.MUTANT||nextGrid[ni][nj]===TYPES.INFECTED)){nextGrid[ni][nj]=grid[i][j];nextGenomeGrid[ni][nj]=genomeGrid[i][j];nextMemoryGrid[ni][nj]=memoryGrid[i][j];nextImpulseX[ni][nj]=impulseX[i][j];nextImpulseY[ni][nj]=impulseY[i][j];for(const k of Object.keys(timers)){timers[k][ni][nj]=timers[k][i][j];timers[k][i][j]=0;}nextGrid[i][j]=TYPES.EMPTY;nextGenomeGrid[i][j]=0;nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;}else{nextImpulseX[i][j]=-impulseX[i][j]*0.5;nextImpulseY[i][j]=-impulseY[i][j]*0.5;}}}
-for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(nextGrid[i][j]!==TYPES.EMPTY&&grid[i][j]===TYPES.EMPTY){nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;}if(nextGrid[i][j]===TYPES.EMPTY){nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;}}}
-[grid,nextGrid]=[nextGrid,grid];[genomeGrid,nextGenomeGrid]=[nextGenomeGrid,genomeGrid];[memoryGrid,nextMemoryGrid]=[nextMemoryGrid,memoryGrid];[impulseX,nextImpulseX]=[nextImpulseX,impulseX];[impulseY,nextImpulseY]=[nextImpulseY,impulseY];for(let i=0;i<cols;i++)nextGrid[i].fill(0);}
-function draw(){ctx.clearRect(0,0,width,height);for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){const cell=grid[i][j];if(cell===TYPES.EMPTY)continue;const x=i*cellSize,y=j*cellSize;let s,sh,b;switch(cell){case TYPES.LIFE:s='rgba(255,0,255,0.07)';sh='transparent';b=0;break;case TYPES.MUTANT:{const int=0.2+Math.sin(Date.now()*0.02+i+j)*0.08;s='rgba(255,0,255,'+int+')';sh='#ff00ff';b=6;break;}case TYPES.PREDATOR:s='rgba(0,255,255,0.5)';sh='#00ffff';b=8;break;case TYPES.SUPER_PREDATOR:{const int=0.6+Math.sin(Date.now()*0.03+i+j)*0.2;s='rgba(255,20,150,'+int+')';sh='#ff1496';b=12;break;}case TYPES.PARASITE:s='rgba(255,20,150,0.6)';sh='#ff1496';b=10;break;case TYPES.INFECTED:{const int=0.25+Math.sin(Date.now()*0.025+i+j)*0.1;s='rgba(255,80,180,'+int+')';sh='#ff50b4';b=7;break;}case TYPES.GUARDIAN:s='rgba(0,0,0,1)';sh='transparent';b=0;break;}ctx.fillStyle=s;ctx.shadowColor=sh;ctx.shadowBlur=b;ctx.fillRect(x,y,cellSize-1,cellSize-1);}}ctx.shadowBlur=0;ctx.shadowColor='transparent';}
+let anyNearCenter=false;
+for(let i=cx1;i<=cx2;i++){for(let j=cy1;j<=cy2;j++){const t=nextGrid[i][j];if(t!==TYPES.EMPTY&&t!==TYPES.GUARDIAN){anyNearCenter=true;break;}}if(anyNearCenter)break;}
+if(anyNearCenter){for(let i=cx1;i<=cx2;i++){for(let j=cy1;j<=cy2;j++){if(nextGrid[i][j]===TYPES.EMPTY&&Math.random()<0.25){nextGrid[i][j]=TYPES.GUARDIAN;timers.guardian[i][j]=DURATIONS.GUARDIAN;nextMemoryGrid[i][j]=0;}}}}
+const curScanR=Math.round(globalScanRadius);
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+const cell=grid[i][j];
+if(cell===TYPES.LIFE||cell===TYPES.MUTANT||cell===TYPES.INFECTED){
+let sumX=0,sumY=0,cnt=0;
+for(let dx=-curScanR;dx<=curScanR;dx++){for(let dy=-curScanR;dy<=curScanR;dy++){if(dx===0&&dy===0)continue;
+const ni=(i+dx+cols)%cols,nj=(j+dy+rows)%rows;
+const ncell=grid[ni][nj];
+if(ncell===TYPES.LIFE||ncell===TYPES.MUTANT||ncell===TYPES.INFECTED){
+  const nLife = countLife(ni,nj);
+  const weight = 1.0 / (1.0 + nLife * globalIsolationPower);
+  sumX += dx * weight;
+  sumY += dy * weight;
+  cnt += weight;
+}
+}}
+const curLX=learnX[i][j]||0;const curLY=learnY[i][j]||0;
+let newLX,newLY;
+if(cnt>0){
+const tX=sumX/cnt, tY=sumY/cnt;
+const len=Math.sqrt(tX*tX+tY*tY);
+const normX = len>0 ? tX/len : 0;
+const normY = len>0 ? tY/len : 0;
+newLX = curLX + globalLearningRate*(normX - curLX);
+newLY = curLY + globalLearningRate*(normY - curLY);
+}else{
+newLX = curLX*0.95 + (Math.random()-0.5)*0.3;
+newLY = curLY*0.95 + (Math.random()-0.5)*0.3;
+}
+const mag=Math.sqrt(newLX*newLX+newLY*newLY);
+if(mag>1.0){newLX /= mag; newLY /= mag;}
+nextLearnX[i][j]=newLX;nextLearnY[i][j]=newLY;
+}else{nextLearnX[i][j]=0;nextLearnY[i][j]=0;}
+}}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+if(grid[i][j]!==TYPES.EMPTY){let dx=0,dy=0;const type=grid[i][j];
+if(type===TYPES.LIFE||type===TYPES.MUTANT||type===TYPES.INFECTED){
+const mem=memoryGrid[i][j]||0;
+dx+=learnX[i][j]*globalImpulseWeight;dy+=learnY[i][j]*globalImpulseWeight;
+for(let nx=-2;nx<=2;nx++){for(let ny=-2;ny<=2;ny++){if(nx===0&&ny===0)continue;const ni=(i+nx+cols)%cols,nj=(j+ny+rows)%rows;const neighbor=grid[ni][nj];
+if(neighbor===TYPES.LIFE||neighbor===TYPES.MUTANT||neighbor===TYPES.INFECTED){
+dx+=nx*0.5*mem; dy+=ny*0.5*mem;
+}
+else if(neighbor===TYPES.PREDATOR||neighbor===TYPES.SUPER_PREDATOR){dx-=nx*0.5;dy-=ny*0.5;}
+}}
+for(let nx=-1;nx<=1;nx++){for(let ny=-1;ny<=1;ny++){if(nx===0&&ny===0)continue;const ni=(i+nx+cols)%cols,nj=(j+ny+rows)%rows;
+if(grid[ni][nj]===TYPES.LIFE||grid[ni][nj]===TYPES.MUTANT){dx+=nx*0.3*mem;dy+=ny*0.3*mem;}
+}}
+}else if(type===TYPES.PREDATOR||type===TYPES.SUPER_PREDATOR){for(let nx=-2;nx<=2;nx++){for(let ny=-2;ny<=2;ny++){if(nx===0&&ny===0)continue;const ni=(i+nx+cols)%cols,nj=(j+ny+rows)%rows;
+if(grid[ni][nj]===TYPES.LIFE||grid[ni][nj]===TYPES.MUTANT||grid[ni][nj]===TYPES.INFECTED){dx+=nx*0.5;dy+=ny*0.5;}}}
+}else if(type===TYPES.PARASITE){for(let nx=-1;nx<=1;nx++){for(let ny=-1;ny<=1;ny++){if(nx===0&&ny===0)continue;const ni=(i+nx+cols)%cols,nj=(j+ny+rows)%rows;if(grid[ni][nj]===TYPES.LIFE){dx+=nx*0.2;dy+=ny*0.2;}}}}
+const forceLen=Math.sqrt(dx*dx+dy*dy);
+if(forceLen>1.0){dx/=forceLen; dy/=forceLen;}
+nextImpulseX[i][j]=globalFriction*impulseX[i][j]+0.15*dx;
+nextImpulseY[i][j]=globalFriction*impulseY[i][j]+0.15*dy;
+const impLen=Math.sqrt(nextImpulseX[i][j]*nextImpulseX[i][j]+nextImpulseY[i][j]*nextImpulseY[i][j]);
+if(impLen>1.0){nextImpulseX[i][j]/=impLen; nextImpulseY[i][j]/=impLen;}
+}else{nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;}
+}}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){if(grid[i][j]===TYPES.EMPTY)continue;const ix=impulseX[i][j],iy=impulseY[i][j];if(Math.abs(ix)<0.3&&Math.abs(iy)<0.3)continue;const ni=(i+Math.round(ix)+cols)%cols,nj=(j+Math.round(iy)+rows)%rows;if(ni===i&&nj===j)continue;
+if(nextGrid[ni][nj]===TYPES.EMPTY){
+nextGrid[ni][nj]=grid[i][j];nextGenomeGrid[ni][nj]=genomeGrid[i][j];nextMemoryGrid[ni][nj]=memoryGrid[i][j];
+nextImpulseX[ni][nj]=impulseX[i][j];nextImpulseY[ni][nj]=impulseY[i][j];
+nextLearnX[ni][nj]=learnX[i][j];nextLearnY[ni][nj]=learnY[i][j];
+for(const k of Object.keys(timers)){timers[k][ni][nj]=timers[k][i][j];timers[k][i][j]=0;}
+nextGrid[i][j]=TYPES.EMPTY;nextGenomeGrid[i][j]=0;nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;
+}else if((grid[i][j]===TYPES.PREDATOR||grid[i][j]===TYPES.SUPER_PREDATOR)&&(nextGrid[ni][nj]===TYPES.LIFE||nextGrid[ni][nj]===TYPES.MUTANT||nextGrid[ni][nj]===TYPES.INFECTED)){
+nextGrid[ni][nj]=grid[i][j];nextGenomeGrid[ni][nj]=genomeGrid[i][j];nextMemoryGrid[ni][nj]=memoryGrid[i][j];
+nextImpulseX[ni][nj]=impulseX[i][j];nextImpulseY[ni][nj]=impulseY[i][j];
+nextLearnX[ni][nj]=learnX[i][j];nextLearnY[ni][nj]=learnY[i][j];
+for(const k of Object.keys(timers)){timers[k][ni][nj]=timers[k][i][j];timers[k][i][j]=0;}
+nextGrid[i][j]=TYPES.EMPTY;nextGenomeGrid[i][j]=0;nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;
+}else{nextImpulseX[i][j]=-impulseX[i][j]*0.5;nextImpulseY[i][j]=-impulseY[i][j]*0.5;}
+}}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+if(nextGrid[i][j]!==TYPES.EMPTY&&grid[i][j]===TYPES.EMPTY){nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;nextLearnX[i][j]=0;nextLearnY[i][j]=0;}
+if(nextGrid[i][j]===TYPES.EMPTY){nextMemoryGrid[i][j]=0;nextImpulseX[i][j]=0;nextImpulseY[i][j]=0;nextLearnX[i][j]=0;nextLearnY[i][j]=0;}
+}}
+[grid,nextGrid]=[nextGrid,grid];[genomeGrid,nextGenomeGrid]=[nextGenomeGrid,genomeGrid];
+[memoryGrid,nextMemoryGrid]=[nextMemoryGrid,memoryGrid];
+[impulseX,nextImpulseX]=[nextImpulseX,impulseX];[impulseY,nextImpulseY]=[nextImpulseY,impulseY];
+[learnX,nextLearnX]=[nextLearnX,learnX];[learnY,nextLearnY]=[nextLearnY,learnY];
+for(let i=0;i<cols;i++)nextGrid[i].fill(0);
+}
+function draw(){
+ctx.clearRect(0,0,width,height);
+ctx.strokeStyle='rgba(255,0,255,0.2)';ctx.lineWidth=1;
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){
+const cell=grid[i][j];
+if(cell!==TYPES.LIFE&&cell!==TYPES.MUTANT) continue;
+const neighbors=[[1,0],[0,1],[1,1],[-1,1]];
+for(const [dx,dy] of neighbors){
+const ni=(i+dx+cols)%cols, nj=(j+dy+rows)%rows;
+if(grid[ni][nj]===TYPES.LIFE||grid[ni][nj]===TYPES.MUTANT){
+ctx.beginPath();
+ctx.moveTo(i*cellSize+cellSize/2, j*cellSize+cellSize/2);
+ctx.lineTo(ni*cellSize+cellSize/2, nj*cellSize+cellSize/2);
+ctx.stroke();
+}
+}
+}}
+for(let i=0;i<cols;i++){for(let j=0;j<rows;j++){const cell=grid[i][j];if(cell===TYPES.EMPTY)continue;const x=i*cellSize,y=j*cellSize;let s,sh,b;switch(cell){
+case TYPES.LIFE:s='rgba(255,0,255,0.07)';sh='transparent';b=0;break;
+case TYPES.MUTANT:{const int=0.2+Math.sin(Date.now()*0.02+i+j)*0.08;s='rgba(255,0,255,'+int+')';sh='#ff00ff';b=6;break;}
+case TYPES.PREDATOR:s='rgba(0,255,255,0.5)';sh='#00ffff';b=8;break;
+case TYPES.SUPER_PREDATOR:{const int=0.6+Math.sin(Date.now()*0.03+i+j)*0.2;s='rgba(255,20,150,'+int+')';sh='#ff1496';b=12;break;}
+case TYPES.PARASITE:s='rgba(255,20,150,0.6)';sh='#ff1496';b=10;break;
+case TYPES.INFECTED:{const int=0.25+Math.sin(Date.now()*0.025+i+j)*0.1;s='rgba(255,80,180,'+int+')';sh='#ff50b4';b=7;break;}
+case TYPES.GUARDIAN:s='rgba(0,0,0,1)';sh='transparent';b=0;break;
+}ctx.fillStyle=s;ctx.shadowColor=sh;ctx.shadowBlur=b;ctx.fillRect(x,y,cellSize-1,cellSize-1);}}ctx.shadowBlur=0;ctx.shadowColor='transparent';
+}
 function loop(){update();draw();requestAnimationFrame(loop);}
 window.addEventListener('resize',resize);resize();
 setInterval(saveState,5000);window.addEventListener('beforeunload',saveState);loop();
