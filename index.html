@@ -1,0 +1,330 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Jinx — Social Network</title><meta name="description" content="Jinx — new global social network. Join Jinx community. Future of communication."><meta name="keywords" content="Jinx, Jinx social network, Jinx community, Jinx online"><meta name="robots" content="index, follow"><link rel="canonical" href="https://jinx-social-network.github.io/"><meta property="og:title" content="Jinx — Social Network"><meta property="og:description" content="Jinx — new global social network."><meta property="og:url" content="https://jinx-social-network.github.io/"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Jinx — Social Network"><meta name="twitter:description" content="Jinx — new global social network."><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Jinx","url":"https://jinx-social-network.github.io/","description":"Jinx — new global social network."}</script><link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet"><style>*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%;width:100%;background:#000;font-family:'Permanent Marker','Permanent Marker Fallback',cursive;overflow:hidden}body{display:flex;flex-direction:column;justify-content:center;align-items:center}canvas#life{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}h1{display:flex;gap:0;z-index:4;position:relative;margin:0;font-weight:400}h1 .letter{position:relative;font-size:clamp(60px,18vw,220px);text-transform:uppercase;color:#fff;white-space:nowrap;line-height:1;user-select:none;text-shadow:4px 4px 0 #ff00ff,-4px -4px 0 #00ffff,0 0 20px #ff00ff,0 0 40px #00ffff,0 0 80px rgba(255,0,255,0.6);animation:shakeLetter .08s infinite alternate ease-in-out;transform-origin:center;will-change:transform}h1 .letter:nth-child(1){animation-delay:0s}h1 .letter:nth-child(2){animation-delay:.02s}h1 .letter:nth-child(3){animation-delay:.04s}h1 .letter:nth-child(4){animation-delay:.06s}h1 .letter::before,h1 .letter::after{content:attr(data-letter);position:absolute;top:0;left:0;width:100%;height:100%;font-family:inherit;text-transform:uppercase;opacity:.8;mix-blend-mode:screen}h1 .letter::before{color:#ff00ff;clip-path:polygon(0 15%,100% 20%,100% 45%,0 40%,0 65%,100% 70%,100% 85%,0 80%);animation:glitchSlice1 .35s infinite steps(2);text-shadow:0 0 15px #ff00ff,0 0 30px #ff00ff}h1 .letter::after{color:#00ffff;clip-path:polygon(0 50%,100% 55%,100% 75%,0 70%,0 90%,100% 95%);animation:glitchSlice2 .4s infinite steps(2);text-shadow:0 0 15px #00ffff,0 0 30px #00ffff}.subtitle{font-size:clamp(.9rem,3vw,1.3rem);margin-top:2vh;text-transform:uppercase;letter-spacing:.25em;color:#fff;z-index:4;text-shadow:2px 2px 0 #ff00ff,-2px -2px 0 #00ffff,0 0 10px #ff00ff,0 0 20px #00ffff;animation:flicker 1.8s infinite;user-select:none}@keyframes shakeLetter{0%{transform:translate(0,0)}25%{transform:translate(-2px,2px)}50%{transform:translate(2px,-1px)}75%{transform:translate(-1px,-2px)}100%{transform:translate(1px,1px)}}@keyframes glitchSlice1{0%{transform:translate(0,0);clip-path:polygon(0 15%,100% 20%,100% 45%,0 40%,0 65%,100% 70%,100% 85%,0 80%)}50%{transform:translate(-5px,2px);clip-path:polygon(0 20%,100% 15%,100% 50%,0 45%,0 70%,100% 75%,100% 90%,0 85%)}100%{transform:translate(0,0);clip-path:polygon(0 15%,100% 20%,100% 45%,0 40%,0 65%,100% 70%,100% 85%,0 80%)}}@keyframes glitchSlice2{0%{transform:translate(0,0);clip-path:polygon(0 50%,100% 55%,100% 75%,0 70%,0 90%,100% 95%)}50%{transform:translate(5px,-2px);clip-path:polygon(0 55%,100% 50%,100% 80%,0 75%,0 95%,100% 100%)}100%{transform:translate(0,0);clip-path:polygon(0 50%,100% 55%,100% 75%,0 70%,0 90%,100% 95%)}}@keyframes flicker{0%,19%,21%,23%,25%,54%,56%,100%{opacity:.9}20%,24%,55%{opacity:.55}}@media(max-width:400px){h1 .letter{font-size:clamp(50px,16vw,80px)}.subtitle{font-size:clamp(.7rem,2.5vw,1rem)}}</style></head><body><canvas id="life"></canvas><h1><span class="letter" data-letter="J">J</span><span class="letter" data-letter="i">i</span><span class="letter" data-letter="n">n</span><span class="letter" data-letter="x">x</span></h1><p class="subtitle">Social Network</p><script>
+(function() {
+const canvas = document.getElementById('life');
+const ctx = canvas.getContext('2d');
+let width, height, cols, rows;
+const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const cellSize = isMobile ? 4 : 5;
+const TYPES = { EMPTY:0, LIFE:1, MUTANT:2, PREDATOR:3, SUPER_PREDATOR:4, PARASITE:5, INFECTED:6 };
+const DURATIONS = { MUTATION:15, SUPER_PREDATOR:10, PARASITE:20, INFECTED:12 };
+let grid, nextGrid;
+let timers = { mutation:[], superPredator:[], parasite:[], infected:[] };
+let driftX = 0, driftY = 0;
+let targetDriftX = 0, targetDriftY = 0;
+let shiftCounter = 0;
+const SHIFT_INTERVAL = 5;
+const STORAGE_KEY = 'jinx_life_state';
+
+const CENTER_DEATH_CHANCE = {
+    [TYPES.LIFE]: 0.2,
+    [TYPES.MUTANT]: 0.25,
+    [TYPES.PREDATOR]: 0.35,
+    [TYPES.SUPER_PREDATOR]: 0.4,
+    [TYPES.PARASITE]: 0.3,
+    [TYPES.INFECTED]: 0.25
+};
+
+function saveState() {
+    try {
+        const state = {
+            cols, rows,
+            grid: grid,
+            timers: {
+                mutation: timers.mutation,
+                superPredator: timers.superPredator,
+                parasite: timers.parasite,
+                infected: timers.infected
+            }
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch(e) {}
+}
+
+function loadState() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (!saved) return false;
+        const state = JSON.parse(saved);
+        if (state.cols === cols && state.rows === rows &&
+            state.grid && state.grid.length === cols &&
+            state.grid[0] && state.grid[0].length === rows) {
+            grid = state.grid;
+            timers = state.timers;
+            // пересоздаём nextGrid нужного размера
+            nextGrid = Array.from({length: cols}, () => new Array(rows).fill(0));
+            return true;
+        }
+    } catch(e) {}
+    return false;
+}
+
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+    cols = Math.floor(width / cellSize);
+    rows = Math.floor(height / cellSize);
+    if (!loadState()) {
+        initGrid();
+    }
+}
+
+function initGrid() {
+    grid = Array.from({length: cols}, () => new Array(rows).fill(0));
+    nextGrid = Array.from({length: cols}, () => new Array(rows).fill(0));
+    for (const key of Object.keys(timers)) {
+        timers[key] = Array.from({length: cols}, () => new Array(rows).fill(0));
+    }
+    const { cx1, cx2, cy1, cy2 } = getCenterBounds();
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            if (!(i >= cx1 && i <= cx2 && j >= cy1 && j <= cy2) && Math.random() < 0.06) {
+                grid[i][j] = TYPES.LIFE;
+            }
+        }
+    }
+}
+
+function getCenterBounds() {
+    const cx1 = Math.floor(cols * 0.3), cx2 = Math.floor(cols * 0.7);
+    const cy1 = Math.floor(rows * 0.3), cy2 = Math.floor(rows * 0.7);
+    return { cx1, cx2, cy1, cy2 };
+}
+function isCenter(i, j) {
+    const { cx1, cx2, cy1, cy2 } = getCenterBounds();
+    return i >= cx1 && i <= cx2 && j >= cy1 && j <= cy2;
+}
+
+function countNeighbors(x, y, type) {
+    let cnt = 0;
+    for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            if (grid[(x+dx+cols)%cols][(y+dy+rows)%rows] === type) cnt++;
+        }
+    return cnt;
+}
+function countLife(x, y) {
+    return countNeighbors(x,y,TYPES.LIFE) + countNeighbors(x,y,TYPES.MUTANT) + countNeighbors(x,y,TYPES.INFECTED);
+}
+
+function shiftGridOnce(dx, dy) {
+    const newGrid = Array.from({length: cols}, () => new Array(rows).fill(0));
+    const newTimers = {};
+    for (const key of Object.keys(timers)) {
+        newTimers[key] = Array.from({length: cols}, () => new Array(rows).fill(0));
+    }
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            const ni = (i + dx + cols) % cols;
+            const nj = (j + dy + rows) % rows;
+            if (grid[i][j] !== TYPES.EMPTY) {
+                newGrid[ni][nj] = grid[i][j];
+                for (const key of Object.keys(timers)) {
+                    newTimers[key][ni][nj] = timers[key][i][j];
+                }
+            }
+        }
+    }
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            if (newGrid[i][j] === TYPES.EMPTY && !isCenter(i, j)) {
+                const oldI = (i - dx + cols) % cols;
+                const oldJ = (j - dy + rows) % rows;
+                if (grid[oldI][oldJ] === TYPES.EMPTY) {
+                    if (Math.random() < 0.04) newGrid[i][j] = TYPES.LIFE;
+                } else {
+                    if (Math.random() < 0.02) newGrid[i][j] = TYPES.LIFE;
+                }
+            }
+        }
+    }
+    grid = newGrid;
+    for (const key of Object.keys(timers)) timers[key] = newTimers[key];
+}
+
+function update() {
+    targetDriftX = Math.sin(Date.now() * 0.0013) * 0.4 + Math.cos(Date.now() * 0.0017) * 0.3;
+    targetDriftY = Math.cos(Date.now() * 0.0011) * 0.4 + Math.sin(Date.now() * 0.0015) * 0.3;
+    driftX += (targetDriftX - driftX) * 0.04;
+    driftY += (targetDriftY - driftY) * 0.04;
+
+    shiftCounter++;
+    if (shiftCounter >= SHIFT_INTERVAL) {
+        const dx = Math.round(driftX * 1.5);
+        const dy = Math.round(driftY * 1.5);
+        if (dx !== 0 || dy !== 0) shiftGridOnce(dx, dy);
+        shiftCounter = 0;
+    }
+
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            const cell = grid[i][j];
+            if (cell === TYPES.EMPTY) {
+                const life = countLife(i,j);
+                if (!isCenter(i,j) && life >= 4 && Math.random() < 0.07) nextGrid[i][j] = TYPES.PREDATOR;
+                else if (life === 3) nextGrid[i][j] = TYPES.LIFE;
+                else if (!isCenter(i,j) && countNeighbors(i,j,TYPES.MUTANT) >= 2 && Math.random() < 0.3) {
+                    nextGrid[i][j] = TYPES.MUTANT;
+                    timers.mutation[i][j] = DURATIONS.MUTATION;
+                } else if (!isCenter(i,j) && countNeighbors(i,j,TYPES.PARASITE) >= 2 && Math.random() < 0.2) {
+                    nextGrid[i][j] = TYPES.PARASITE;
+                    timers.parasite[i][j] = DURATIONS.PARASITE;
+                } else nextGrid[i][j] = TYPES.EMPTY;
+                continue;
+            }
+
+            if (cell === TYPES.MUTANT) {
+                if (timers.mutation[i][j] > 0) {
+                    timers.mutation[i][j]--;
+                    nextGrid[i][j] = TYPES.MUTANT;
+                } else nextGrid[i][j] = TYPES.LIFE;
+                continue;
+            }
+            if (cell === TYPES.SUPER_PREDATOR) {
+                if (timers.superPredator[i][j] > 0) {
+                    timers.superPredator[i][j]--;
+                    nextGrid[i][j] = TYPES.SUPER_PREDATOR;
+                } else nextGrid[i][j] = TYPES.EMPTY;
+                continue;
+            }
+            if (cell === TYPES.PARASITE) {
+                if (timers.parasite[i][j] > 0) {
+                    timers.parasite[i][j]--;
+                    nextGrid[i][j] = TYPES.PARASITE;
+                } else nextGrid[i][j] = TYPES.EMPTY;
+                continue;
+            }
+            if (cell === TYPES.INFECTED) {
+                if (timers.infected[i][j] > 0) {
+                    timers.infected[i][j]--;
+                    nextGrid[i][j] = TYPES.INFECTED;
+                    if (Math.random() < 0.06) {
+                        nextGrid[i][j] = TYPES.PARASITE;
+                        timers.parasite[i][j] = DURATIONS.PARASITE;
+                    }
+                } else nextGrid[i][j] = TYPES.LIFE;
+                continue;
+            }
+            if (cell === TYPES.PREDATOR) {
+                nextGrid[i][j] = TYPES.EMPTY;
+                continue;
+            }
+
+            const life = countLife(i,j);
+            const predators = countNeighbors(i,j,TYPES.PREDATOR);
+            const superPreds = countNeighbors(i,j,TYPES.SUPER_PREDATOR);
+            const parasites = countNeighbors(i,j,TYPES.PARASITE);
+
+            if (life >= 7 || predators > 0 || superPreds > 0 || parasites > 0) {
+                nextGrid[i][j] = TYPES.EMPTY;
+                if (parasites > 0 && Math.random() < 0.35) {
+                    nextGrid[i][j] = TYPES.INFECTED;
+                    timers.infected[i][j] = DURATIONS.INFECTED;
+                }
+            } else if (life >= 2 && life <= 3) {
+                if (Math.random() < 0.012) {
+                    nextGrid[i][j] = TYPES.MUTANT;
+                    timers.mutation[i][j] = DURATIONS.MUTATION;
+                } else if (parasites > 0 && Math.random() < 0.18) {
+                    nextGrid[i][j] = TYPES.INFECTED;
+                    timers.infected[i][j] = DURATIONS.INFECTED;
+                } else nextGrid[i][j] = TYPES.LIFE;
+            } else nextGrid[i][j] = TYPES.EMPTY;
+        }
+    }
+
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            if (grid[i][j] === TYPES.PREDATOR) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const ci = (i+dx+cols)%cols, cj = (j+dy+rows)%rows;
+                        if ([TYPES.LIFE, TYPES.MUTANT, TYPES.INFECTED].includes(nextGrid[ci][cj])) {
+                            nextGrid[ci][cj] = TYPES.EMPTY;
+                            if (!isCenter(ci,cj) && Math.random() < 0.25) {
+                                nextGrid[ci][cj] = TYPES.SUPER_PREDATOR;
+                                timers.superPredator[ci][cj] = DURATIONS.SUPER_PREDATOR;
+                            }
+                        } else if (nextGrid[ci][cj] === TYPES.PARASITE) nextGrid[ci][cj] = TYPES.EMPTY;
+                    }
+                }
+            }
+            if (grid[i][j] === TYPES.SUPER_PREDATOR) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const ci = (i+dx+cols)%cols, cj = (j+dy+rows)%rows;
+                        if (nextGrid[ci][cj] !== TYPES.EMPTY && nextGrid[ci][cj] !== TYPES.SUPER_PREDATOR) {
+                            nextGrid[ci][cj] = TYPES.EMPTY;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            if (isCenter(i, j) && nextGrid[i][j] !== TYPES.EMPTY) {
+                const type = nextGrid[i][j];
+                const chance = CENTER_DEATH_CHANCE[type] || 0.25;
+                if (Math.random() < chance) {
+                    nextGrid[i][j] = TYPES.EMPTY;
+                }
+            }
+        }
+    }
+
+    [grid, nextGrid] = [nextGrid, grid];
+    for (let i = 0; i < cols; i++) nextGrid[i].fill(0);
+}
+
+function draw() {
+    ctx.clearRect(0,0,width,height);
+    for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+            const cell = grid[i][j];
+            if (cell === TYPES.EMPTY) continue;
+            const x = i*cellSize, y = j*cellSize;
+            let style, shadow, blur;
+            switch(cell) {
+                case TYPES.LIFE: style='rgba(255,0,255,0.07)'; shadow='transparent'; blur=0; break;
+                case TYPES.MUTANT: {
+                    const int = 0.2+Math.sin(Date.now()*0.02+i+j)*0.08;
+                    style=`rgba(255,0,255,${int})`; shadow='#ff00ff'; blur=6; break;
+                }
+                case TYPES.PREDATOR: style='rgba(0,255,255,0.5)'; shadow='#00ffff'; blur=8; break;
+                case TYPES.SUPER_PREDATOR: {
+                    const int = 0.6+Math.sin(Date.now()*0.03+i+j)*0.2;
+                    style=`rgba(255,20,150,${int})`; shadow='#ff1496'; blur=12; break;
+                }
+                case TYPES.PARASITE: style='rgba(255,20,150,0.6)'; shadow='#ff1496'; blur=10; break;
+                case TYPES.INFECTED: {
+                    const int = 0.25+Math.sin(Date.now()*0.025+i+j)*0.1;
+                    style=`rgba(255,80,180,${int})`; shadow='#ff50b4'; blur=7; break;
+                }
+            }
+            ctx.fillStyle = style; ctx.shadowColor = shadow; ctx.shadowBlur = blur;
+            ctx.fillRect(x,y,cellSize-1,cellSize-1);
+        }
+    }
+    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+setInterval(saveState, 5000);
+window.addEventListener('beforeunload', saveState);
+loop();
+})();
+</script></body></html>
